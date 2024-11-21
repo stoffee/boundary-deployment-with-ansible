@@ -1,0 +1,69 @@
+---
+# security_hardening.yml
+# Purpose: Apply security best practices for Boundary deployment
+# Because security is not optional! 🔒
+
+- name: Apply Security Hardening
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Update all packages to latest version
+      dnf:
+        name: "*"
+        state: latest
+        
+    - name: Set secure file permissions on Boundary directories
+      file:
+        path: "{{ item }}"
+        mode: '0750'
+        owner: boundary
+        group: boundary
+        recurse: yes
+      loop:
+        - /etc/boundary.d
+        - /var/log/boundary
+        - /var/lib/boundary
+
+    - name: Configure secure umask for boundary service
+      lineinfile:
+        path: /etc/systemd/system/boundary.service
+        line: "UMask=0027"
+        insertafter: "[Service]"
+        create: yes
+      notify: reload systemd
+
+    - name: Disable core dumps
+      sysctl:
+        name: fs.suid_dumpable
+        value: 0
+        state: present
+
+    - name: Set kernel hardening parameters
+      sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        state: present
+      with_items:
+        - { key: "kernel.sysrq", value: "0" }
+        - { key: "net.ipv4.conf.all.send_redirects", value: "0" }
+        - { key: "net.ipv4.conf.default.send_redirects", value: "0" }
+        - { key: "net.ipv4.conf.all.accept_redirects", value: "0" }
+        - { key: "net.ipv4.conf.default.accept_redirects", value: "0" }
+
+    - name: Configure audit rules for Boundary files
+      template:
+        src: templates/audit.rules.j2
+        dest: /etc/audit/rules.d/boundary.rules
+        mode: '0600'
+      notify: restart auditd
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart auditd
+      service:
+        name: auditd
+        state: restarted
