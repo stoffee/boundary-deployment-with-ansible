@@ -1,0 +1,79 @@
+# Ansible
+*.retry
+*.pyc
+__pycache__/
+.ansible/
+ansible.cfg
+inventory.ini
+vault.yml
+vault.yaml
+group_vars/vault.yml
+host_vars/vault.yml
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl
+
+# Environment files
+.env
+*.env
+environment.tf
+boundary.env
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.cer
+*.ca-bundle
+*.p12
+*.pfx
+
+# Secrets and credentials
+*secret*
+*password*
+*credential*
+*.key
+*token*
+*auth*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+log/
+
+# Temp files
+*.tmp
+*.bak
+*.backup
+.tmp/
+.temp/
+
+# Local development files
+local/
+dev/
+notes/
+
+# Testing
+test/
+tests/
