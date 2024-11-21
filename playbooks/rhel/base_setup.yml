@@ -1,0 +1,130 @@
+---
+# rhel_base_setup.yml
+# Purpose: Set up base RHEL infrastructure for HashiCorp Boundary
+# This playbook handles system prerequisites, users, and basic configuration
+
+- name: Boundary Base Infrastructure Setup
+  hosts: boundary_servers  # Target hosts group from inventory
+  become: yes  # Run as sudo
+  vars:
+    boundary_user: boundary
+    boundary_group: boundary
+    boundary_home: /etc/boundary.d
+    boundary_log_dir: /var/log/boundary
+    required_packages:
+      - yum-utils
+      - policycoreutils-python-utils
+      - python3
+      - firewalld
+      - openssl
+      - curl
+
+  tasks:
+    - name: Update system packages
+      dnf:
+        name: "*"
+        state: latest
+        update_cache: yes
+
+    - name: Install required packages
+      dnf:
+        name: "{{ required_packages }}"
+        state: present
+
+    - name: Create Boundary system group
+      group:
+        name: "{{ boundary_group }}"
+        system: yes
+        state: present
+
+    - name: Create Boundary system user
+      user:
+        name: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        system: yes
+        create_home: no
+        shell: /sbin/nologin
+        state: present
+
+    - name: Create Boundary directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0750'
+      loop:
+        - "{{ boundary_home }}"
+        - "{{ boundary_home }}/tls"
+        - "{{ boundary_log_dir }}"
+
+    - name: Configure firewalld
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop:
+        - "9200/tcp"  # API listener
+        - "9201/tcp"  # Cluster listener
+        - "9202/tcp"  # Proxy listener
+        - "9203/tcp"  # Operations listener (health checks)
+      notify: restart firewalld
+
+    - name: Create systemd directory for Boundary
+      file:
+        path: /etc/systemd/system/boundary.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Configure systemd limits
+      copy:
+        dest: /etc/systemd/system/boundary.service.d/limits.conf
+        content: |
+          [Service]
+          LimitMEMLOCK=infinity
+        mode: '0644'
+      notify: reload systemd
+
+    - name: Configure SELinux for Boundary
+      seboolean:
+        name: nis_enabled
+        state: yes
+        persistent: yes
+
+    - name: Set correct SELinux context for Boundary directories
+      sefcontext:
+        target: '{{ item }}(/.*)?'
+        setype: var_lib_t
+        state: present
+      loop:
+        - "{{ boundary_home }}"
+        - "{{ boundary_log_dir }}"
+
+    - name: Apply SELinux context
+      command: restorecon -Rv {{ item }}
+      loop:
+        - "{{ boundary_home }}"
+        - "{{ boundary_log_dir }}"
+
+    - name: Create Boundary environment file
+      copy:
+        dest: "{{ boundary_home }}/boundary.env"
+        content: |
+          # Boundary environment configuration
+          # Add your environment-specific variables here
+          # Example:
+          # POSTGRESQL_CONNECTION_STRING=postgresql://boundary:boundary@postgres.yourdomain.com:5432/boundary
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+  handlers:
+    - name: restart firewalld
+      service:
+        name: firewalld
+        state: restarted
+
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
