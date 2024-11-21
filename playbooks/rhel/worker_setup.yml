@@ -1,0 +1,54 @@
+---
+# rhel_worker_setup.yml
+# Purpose: Set up Boundary worker on RHEL systems
+# This playbook handles worker-specific configuration and setup
+
+- name: Boundary Worker Setup
+  hosts: boundary_workers
+  become: yes
+  vars:
+    boundary_user: boundary
+    boundary_group: boundary
+    boundary_home: /etc/boundary.d
+
+  tasks:
+    - name: Add HashiCorp repository
+      yum_repository:
+        name: hashicorp
+        description: HashiCorp Stable - $basearch
+        baseurl: https://rpm.releases.hashicorp.com/RHEL/$releasever/$basearch/stable
+        gpgkey: https://rpm.releases.hashicorp.com/gpg
+        gpgcheck: yes
+        enabled: yes
+
+    - name: Install Boundary Enterprise
+      dnf:
+        name: boundary-enterprise
+        state: present
+
+    - name: Create worker config from template
+      template:
+        src: templates/worker.hcl.j2
+        dest: "{{ boundary_home }}/worker.hcl"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Ensure auth storage directory exists
+      file:
+        path: /var/lib/boundary
+        state: directory
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0750'
+
+    - name: Ensure Boundary service is configured
+      systemd:
+        name: boundary
+        enabled: yes
+        state: started
+
+    - name: Wait for service to be ready
+      wait_for:
+        port: 9202
+        timeout: 30
