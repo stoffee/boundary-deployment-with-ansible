@@ -1,0 +1,57 @@
+---
+# deploy_boundary.yml
+# Purpose: Main orchestration playbook for Boundary deployment
+# This playbook coordinates the entire deployment process! 🎪
+
+- name: Deploy HashiCorp Boundary Infrastructure
+  hosts: all
+  gather_facts: true
+
+  pre_tasks:
+    - name: Check minimum requirements
+      fail:
+        msg: "This playbook requires RHEL/CentOS 8 or higher"
+      when: 
+        - ansible_facts['distribution'] != "RedHat"
+        - ansible_facts['distribution_major_version'] | int < 8
+      
+- name: Base System Setup 🏗️
+  import_playbook: base_setup.yml
+
+- name: Apply Security Hardening 🛡️
+  import_playbook: security_hardening.yml
+
+- name: Setup Boundary Controllers 🎮
+  import_playbook: controller_setup.yml
+  tags: 
+    - controllers
+
+- name: Setup Boundary Workers 🔧
+  import_playbook: worker_setup.yml
+  tags:
+    - workers
+
+- name: Verify Deployment ✅
+  hosts: all
+  become: yes
+  tasks:
+    - name: Check controller health
+      uri:
+        url: "http://localhost:9203/health"
+        method: GET
+        status_code: 200
+      register: health_check
+      until: health_check.status == 200
+      retries: 6
+      delay: 10
+      when: "'boundary_controllers' in group_names"
+
+    - name: Verify worker connectivity
+      wait_for:
+        port: 9202
+        timeout: 30
+      when: "'boundary_workers' in group_names"
+
+    - name: Report success 🎉
+      debug:
+        msg: "Boundary deployment completed successfully! Time to celebrate! 🎈"
