@@ -1,0 +1,68 @@
+---
+# rhel_controller_setup.yml
+# Purpose: Set up Boundary controller on RHEL systems
+# This playbook handles controller-specific configuration and setup
+
+- name: Boundary Controller Setup
+  hosts: boundary_controllers
+  become: yes
+  vars:
+    boundary_user: boundary
+    boundary_group: boundary
+    boundary_home: /etc/boundary.d
+    boundary_version: '0.12.0'  # Update as needed
+
+  tasks:
+    - name: Add HashiCorp repository
+      yum_repository:
+        name: hashicorp
+        description: HashiCorp Stable - $basearch
+        baseurl: https://rpm.releases.hashicorp.com/RHEL/$releasever/$basearch/stable
+        gpgkey: https://rpm.releases.hashicorp.com/gpg
+        gpgcheck: yes
+        enabled: yes
+
+    - name: Install Boundary Enterprise
+      dnf:
+        name: boundary-enterprise
+        state: present
+
+    - name: Create controller config from template
+      template:
+        src: templates/controller.hcl.j2
+        dest: "{{ boundary_home }}/controller.hcl"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Ensure Boundary service is configured
+      systemd:
+        name: boundary
+        enabled: yes
+        state: started
+
+    - name: Wait for service to be ready
+      uri:
+        url: "http://localhost:9203/health"
+        method: GET
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Initialize database
+      command: boundary database init -config {{ boundary_home }}/controller.hcl
+      run_once: true
+      args:
+        creates: "{{ boundary_home }}/.db_initialized"
+      register: db_init
+
+    - name: Create database initialization marker
+      file:
+        path: "{{ boundary_home }}/.db_initialized"
+        state: touch
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+      when: db_init.changed
