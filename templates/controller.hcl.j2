@@ -1,0 +1,102 @@
+# Boundary Controller Configuration 🎮
+# This template supports HA controller setup
+
+# Disable memory from being swapped to disk
+disable_mlock = {{ disable_mlock | default('true') }}
+
+# API listener configuration block
+listener "tcp" {
+  address = "{{ controller_api_address | default('0.0.0.0:9200') }}"
+  purpose = "api"
+
+{% if tls_enabled | default(true) %}
+  tls_disable   = false
+  tls_cert_file = "{{ tls_cert_path }}"
+  tls_key_file  = "{{ tls_key_path }}"
+{% endif %}
+
+{% if cors_enabled | default(false) %}
+  cors_enabled = true
+  cors_allowed_origins = {{ cors_allowed_origins | to_json }}
+{% endif %}
+}
+
+# Data-plane listener for worker coordination
+listener "tcp" {
+  address = "{{ controller_cluster_address | default('0.0.0.0:9201') }}"
+  purpose = "cluster"
+}
+
+# Operations listener (health checks, metrics)
+listener "tcp" {
+  address = "{{ controller_ops_address | default('0.0.0.0:9203') }}"
+  purpose = "ops"
+
+{% if tls_enabled | default(true) %}
+  tls_disable   = false
+  tls_cert_file = "{{ tls_cert_path }}"
+  tls_key_file  = "{{ tls_key_path }}"
+{% endif %}
+}
+
+# Controller configuration
+controller {
+  name = "{{ controller_name }}"
+  description = "{{ controller_description | default('Boundary controller') }}"
+  
+  # Database configuration - Using environment variable for security
+  database {
+      url = "env://POSTGRESQL_CONNECTION_STRING"
+  }
+
+  # Public cluster address for worker coordination
+  public_cluster_addr = "{{ public_cluster_addr }}"
+
+{% if enterprise_license_path is defined %}
+  # Enterprise license
+  license = "file://{{ enterprise_license_path }}"
+{% endif %}
+}
+
+# KMS configuration blocks
+{% for kms in kms_blocks %}
+kms "{{ kms.type }}" {
+  purpose = "{{ kms.purpose }}"
+  {% for key, value in kms.config.items() %}
+  {{ key }} = "{{ value }}"
+  {% endfor %}
+}
+{% endfor %}
+
+# Event logging configuration
+events {
+  audit_enabled       = {{ audit_enabled | default('true') }}
+  sysevents_enabled   = {{ sysevents_enabled | default('true') }}
+  observations_enable = {{ observations_enable | default('true') }}
+
+  # Sink for all events to stderr
+  sink "stderr" {
+    name = "all-events"
+    description = "All events sent to stderr"
+    event_types = ["*"]
+    format = "cloudevents-json"
+  }
+
+  # File-based event sink
+  sink {
+    name = "file-sink"
+    description = "All events sent to a file"
+    event_types = ["*"]
+    format = "cloudevents-json"
+    file {
+      path = "{{ boundary_log_dir }}"
+      file_name = "controller.log"
+    }
+    audit_config {
+      audit_filter_overrides {
+        sensitive = "redact"
+        secret    = "redact"
+      }
+    }
+  }
+}

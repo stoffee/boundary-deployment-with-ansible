@@ -1,0 +1,80 @@
+# Boundary Worker Configuration 🔧
+# Supports both ingress and egress worker configurations
+
+# Disable memory from being swapped to disk
+disable_mlock = {{ disable_mlock | default('true') }}
+
+# Proxy listener configuration
+listener "tcp" {
+  address = "{{ worker_proxy_address | default('0.0.0.0:9202') }}"
+  purpose = "proxy"
+}
+
+# Worker configuration
+worker {
+  # Worker's public address
+  public_addr = "{{ worker_public_addr }}"
+  
+  # Initial upstream addresses for the worker to connect to
+  initial_upstreams = {{ worker_initial_upstreams | to_json }}
+
+  # Path for worker authentication storage
+  auth_storage_path = "{{ worker_auth_storage_path | default('/var/lib/boundary/worker') }}"
+
+  # Worker tags for filtering
+  tags {
+    type = {{ worker_tags | default(['worker']) | to_json }}
+    {% if additional_tags is defined %}
+    {% for key, value in additional_tags.items() %}
+    {{ key }} = {{ value | to_json }}
+    {% endfor %}
+    {% endif %}
+  }
+
+{% if worker_description is defined %}
+  description = "{{ worker_description }}"
+{% endif %}
+}
+
+# KMS configuration for worker auth storage encryption
+{% if worker_kms is defined %}
+kms "{{ worker_kms.type }}" {
+  purpose = "worker-auth-storage"
+  {% for key, value in worker_kms.config.items() %}
+  {{ key }} = "{{ value }}"
+  {% endfor %}
+}
+{% endif %}
+
+# Event logging configuration
+events {
+  audit_enabled       = {{ audit_enabled | default('true') }}
+  sysevents_enabled   = {{ sysevents_enabled | default('true') }}
+  observations_enable = {{ observations_enable | default('true') }}
+
+  # Sink for all events to stderr
+  sink "stderr" {
+    name = "all-events"
+    description = "All events sent to stderr"
+    event_types = ["*"]
+    format = "cloudevents-json"
+  }
+
+  # File-based event sink
+  sink {
+    name = "file-sink"
+    description = "All events sent to a file"
+    event_types = ["*"]
+    format = "cloudevents-json"
+    file {
+      path = "{{ boundary_log_dir }}"
+      file_name = "worker.log"
+    }
+    audit_config {
+      audit_filter_overrides {
+        sensitive = "redact"
+        secret    = "redact"
+      }
+    }
+  }
+}

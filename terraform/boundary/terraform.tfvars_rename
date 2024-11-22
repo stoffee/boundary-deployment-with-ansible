@@ -1,0 +1,14 @@
+addr             = "http://your-boundary-address"
+auth_method_id   = "ampw_1234567890"
+login_name       = "admin"
+password         = "your-secure-password"
+organization_name = "Awesome Corp"
+projects = {
+  production = {
+    description = "Production environment 🚀"
+  }
+  staging = {
+    description = "Staging environment 🧪"
+  }
+}
+global_admin_user_ids = ["u_1234567890"]

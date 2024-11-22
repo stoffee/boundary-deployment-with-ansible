@@ -1,0 +1,11 @@
+transit_mount_path = "boundary-transit"
+key_prefix        = "prod-boundary"
+token_period      = "720h"  # 30 days
+token_policies_controller = [
+  "boundary-controller-audit",
+  "boundary-controller-monitoring"
+]
+token_policies_worker = [
+  "boundary-worker-audit"
+]
+enable_recovery_key = true

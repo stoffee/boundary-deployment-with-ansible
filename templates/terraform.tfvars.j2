@@ -1,0 +1,14 @@
+addr             = "{{ boundary_addr }}"
+auth_method_id   = "{{ terraform_vars.auth_method_id }}"
+login_name       = "admin"
+password         = "{{ admin_password }}"  # This should come from vault/ansible-vault
+organization_name = "{{ organization_name }}"
+projects = {
+  production = {
+    description = "Production environment 🚀"
+  }
+  staging = {
+    description = "Staging environment 🧪"
+  }
+}
+global_admin_user_ids = ["{{ terraform_vars.admin_user_id }}"]

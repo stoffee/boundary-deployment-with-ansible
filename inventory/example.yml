@@ -1,0 +1,83 @@
+# inventory/examples.yml 📚
+---
+all:
+  children:
+    boundary_servers:
+      children:
+        boundary_controllers:
+          hosts:
+            controller-example-1:  # Example controller node
+              ansible_host: 10.0.0.10  # Replace with your IP
+              controller_name: "boundary-controller-example"
+              ansible_user: ec2-user    # Or your SSH user
+              # Optional controller-specific variables:
+              # controller_api_address: "0.0.0.0:9200"
+              # controller_cluster_address: "0.0.0.0:9201"
+              # controller_ops_address: "0.0.0.0:9203"
+          vars:
+            # Required controller group variables
+            boundary_cluster_addr: "boundary.your-domain.com"  # Load balancer address
+            postgresql_host: "your-db-host.your-domain.com"
+
+        boundary_workers:
+          children:
+            ingress_workers:
+              hosts:
+                worker-ingress-example:  # Example ingress worker
+                  ansible_host: 10.0.0.20
+                  worker_type: "ingress"  # Required for worker role
+                  ansible_user: ec2-user
+                  # Optional worker-specific variables:
+                  # worker_description: "DMZ ingress worker"
+                  # worker_proxy_address: "0.0.0.0:9202"
+              vars:
+                worker_additional_tags: ["dmz", "public"]  # Optional tags
+
+            egress_workers:
+              hosts:
+                worker-egress-example:  # Example egress worker
+                  ansible_host: 10.0.0.30
+                  worker_type: "egress"
+                  ansible_user: ec2-user
+              vars:
+                worker_additional_tags: ["private", "internal"]
+
+  vars:
+    # Required global variables 🔑
+    ansible_python_interpreter: /usr/bin/python3
+    boundary_controller_addresses: ["controller-1:9201", "controller-2:9201"]  # List all controllers
+    
+    # Optional global variables with defaults
+    tls_enabled: true
+    organization_name: "Your Organization Name"
+    
+    # Security-sensitive variables (should be encrypted!) 🔒
+    # vault_addr: "https://vault.your-domain.com:8200"
+    # vault_token: "<your-vault-token>"
+    # db_password: "<your-db-password>"
+    
+    # Enterprise license configuration (if applicable)
+    # enterprise_license: true
+    # enterprise_license_path: "/etc/boundary.d/boundary.hclic"
+
+# Example inventory structure explanations 📝
+#
+# 1. Controller Setup:
+#    - Minimum of 3 controllers recommended for HA
+#    - Each controller needs unique name
+#    - All controllers should be reachable via load balancer
+#
+# 2. Worker Setup:
+#    - Workers can be "ingress", "egress", or both
+#    - Ingress workers should be in DMZ network
+#    - Egress workers should be in private network
+#
+# 3. Security Notes:
+#    - Use ansible-vault for sensitive variables
+#    - TLS certificates required for production
+#    - Vault KMS integration recommended
+#
+# 4. Network Requirements:
+#    - Controllers: ports 9200-9203
+#    - Workers: port 9202
+#    - Database: port 5432 (PostgreSQL)

@@ -1,0 +1,43 @@
+---
+# Worker-specific configuration 🔧
+
+# Worker networking
+worker_proxy_address: "0.0.0.0:9202"
+worker_public_addr: "{{ ansible_default_ipv4.address }}:9202"
+
+# Auth storage configuration
+worker_auth_storage_path: "/var/lib/boundary/worker"
+
+# Role-based configuration - Set these in inventory!
+worker_role: "{{ worker_type | default('ingress') }}"  # ingress, egress, or both
+
+# Tag configuration based on worker role
+worker_tags:
+  type: 
+    - "{{ worker_role }}"
+    - "{{ ansible_facts['hostname'] }}"
+    - "{{ worker_additional_tags | default([]) }}"
+
+# Worker upstream configuration
+worker_initial_upstreams: "{{ boundary_controller_addresses }}"  # Set in inventory
+
+# KMS configuration for worker auth storage
+worker_kms:
+  type: "vault"
+  config:
+    address: "{{ vault_addr }}"
+    token: "{{ vault_token }}"
+    key_name: "boundary-worker-auth-storage"
+    mount_path: "transit/"
+
+# Example additional tags for different deployment types
+worker_type_tags:
+  ingress:
+    network: "dmz"
+    purpose: "ingress"
+  egress:
+    network: "private"
+    purpose: "egress"
+  both:
+    network: "middleware"
+    purpose: "hybrid"

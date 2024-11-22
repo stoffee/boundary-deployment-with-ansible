@@ -1,0 +1,44 @@
+---
+# Controller-specific configuration 🎮
+controller_description: "Boundary controller in {{ ansible_facts['hostname'] }}"
+controller_name: "controller-{{ ansible_facts['hostname'] }}"
+
+# Listener configuration
+controller_api_address: "0.0.0.0:9200"
+controller_cluster_address: "0.0.0.0:9201"
+controller_ops_address: "0.0.0.0:9203"
+
+# Load balancer configuration
+public_cluster_addr: "{{ boundary_cluster_addr }}"  # Set in inventory
+
+# TLS Configuration
+tls_enabled: true
+cors_enabled: false
+cors_allowed_origins: []
+
+# Database configuration - Override these in vault-encrypted vars!
+postgresql_connection: "postgresql://boundary:boundary@{{ postgresql_host }}:5432/boundary"
+
+# KMS configuration using Vault transit
+kms_blocks:
+  - type: "vault"
+    purpose: "root"
+    config:
+      address: "{{ vault_addr }}"
+      token: "{{ vault_token }}"
+      key_name: "boundary-root"
+      mount_path: "transit/"
+  - type: "vault"
+    purpose: "worker-auth"
+    config:
+      address: "{{ vault_addr }}"
+      token: "{{ vault_token }}"
+      key_name: "boundary-worker-auth"
+      mount_path: "transit/"
+  - type: "vault"
+    purpose: "recovery"
+    config:
+      address: "{{ vault_addr }}"
+      token: "{{ vault_token }}"
+      key_name: "boundary-recovery"
+      mount_path: "transit/"

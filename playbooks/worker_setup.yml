@@ -1,0 +1,106 @@
+# Purpose: Set up Boundary worker on RHEL systems with Vault KMS integration
+# Workers are the real MVPs! 🔧
+
+- name: Boundary Worker Setup
+  hosts: boundary_workers
+  become: yes
+  vars:
+    boundary_user: boundary
+    boundary_group: boundary
+    boundary_home: /etc/boundary.d
+    vault_token: "{{ vault_token | mandatory }}"  # Should be provided via ansible-vault
+
+  tasks:
+    - name: Add HashiCorp repository
+      yum_repository:
+        name: hashicorp
+        description: HashiCorp Stable - $basearch
+        baseurl: https://rpm.releases.hashicorp.com/RHEL/$releasever/$basearch/stable
+        gpgkey: https://rpm.releases.hashicorp.com/gpg
+        gpgcheck: yes
+        enabled: yes
+
+    - name: Install Boundary Enterprise
+      dnf:
+        name: boundary-enterprise
+        state: present
+
+    - name: Create Vault token file directory
+      file:
+        path: "{{ boundary_home }}/vault"
+        state: directory
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0750'
+
+    - name: Create Vault token file
+      copy:
+        content: "{{ vault_token }}"
+        dest: "{{ vault_token_file }}"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Create environment file
+      template:
+        src: templates/boundary.env.j2
+        dest: "{{ boundary_home }}/boundary.env"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Create worker config from template
+      template:
+        src: templates/worker.hcl.j2
+        dest: "{{ boundary_home }}/worker.hcl"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Ensure auth storage directory exists
+      file:
+        path: "{{ worker_auth_storage_path }}"
+        state: directory
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0750'
+
+    - name: Configure systemd service
+      template:
+        src: templates/boundary.service.j2
+        dest: /etc/systemd/system/boundary.service
+        mode: '0644'
+      notify: reload systemd
+
+    - name: Ensure Boundary service is configured
+      systemd:
+        name: boundary
+        enabled: yes
+        state: started
+
+    - name: Wait for service to be ready
+      wait_for:
+        port: 9202
+        timeout: 30
+
+    - name: Get worker activation token
+      command: boundary workers create worker-led -format=json
+      register: worker_token
+      when: inventory_hostname == groups['boundary_workers'][0]
+      changed_when: false
+      delegate_to: "{{ groups['boundary_controllers'][0] }}"
+
+    - name: Save worker token for registration
+      set_fact:
+        worker_auth_token: "{{ worker_token.stdout | from_json | json_query('worker_auth_token') }}"
+      when: inventory_hostname == groups['boundary_workers'][0]
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart boundary
+      systemd:
+        name: boundary
+        state: restarted

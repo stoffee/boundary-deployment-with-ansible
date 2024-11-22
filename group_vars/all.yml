@@ -1,0 +1,32 @@
+---
+# Common configuration for all Boundary nodes 🌟
+boundary_version: "0.12.0"
+boundary_user: boundary
+boundary_group: boundary
+boundary_home: /etc/boundary.d
+boundary_log_dir: /var/log/boundary
+
+# System configuration
+disable_mlock: false
+enable_audit: true
+file_max: 65535
+
+# Logging configuration
+audit_enabled: true
+sysevents_enabled: true
+observations_enable: true
+
+# Vault integration - Override these in vault-encrypted vars!
+vault_addr: "https://vault.example.com:8200"
+vault_token: "hvs.YOUR_TOKEN_HERE"
+
+# Optional enterprise configuration
+enterprise_license_path: "{{ boundary_home }}/boundary.hclic"  # Optional
+
+# Security configuration
+disable_core_dumps: true
+tcp_keepalive_time: 300
+
+# TLS common configuration
+tls_cert_path: "{{ boundary_home }}/tls/boundary-cert.pem"
+tls_key_path: "{{ boundary_home }}/tls/boundary-key.pem"

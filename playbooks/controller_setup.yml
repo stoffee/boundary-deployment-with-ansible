@@ -1,0 +1,152 @@
+# Purpose: Set up Boundary controller on RHEL systems with Vault KMS integration
+# Because controllers need love too! 🎮
+
+- name: Boundary Controller Setup
+  hosts: boundary_controllers
+  become: yes
+  vars:
+    boundary_user: boundary
+    boundary_group: boundary
+    boundary_home: /etc/boundary.d
+    boundary_version: '0.12.0'  # Update as needed
+    vault_token: "{{ vault_token | mandatory }}"  # Should be provided via ansible-vault
+
+  tasks:
+    - name: Add HashiCorp repository
+      yum_repository:
+        name: hashicorp
+        description: HashiCorp Stable - $basearch
+        baseurl: https://rpm.releases.hashicorp.com/RHEL/$releasever/$basearch/stable
+        gpgkey: https://rpm.releases.hashicorp.com/gpg
+        gpgcheck: yes
+        enabled: yes
+
+    - name: Install Boundary Enterprise
+      dnf:
+        name: boundary-enterprise
+        state: present
+
+    - name: Create Vault token file directory
+      file:
+        path: "{{ boundary_home }}/vault"
+        state: directory
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0750'
+
+    - name: Create Vault token file
+      copy:
+        content: "{{ vault_token }}"
+        dest: "{{ vault_token_file }}"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Create environment file
+      template:
+        src: templates/boundary.env.j2
+        dest: "{{ boundary_home }}/boundary.env"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Create controller config from template
+      template:
+        src: templates/controller.hcl.j2
+        dest: "{{ boundary_home }}/controller.hcl"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    - name: Copy TLS certificates
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+      loop:
+        - { src: 'files/tls/boundary-cert.pem', dest: '{{ boundary_home }}/tls/boundary-cert.pem' }
+        - { src: 'files/tls/boundary-key.pem', dest: '{{ boundary_home }}/tls/boundary-key.pem' }
+      when: tls_enabled | bool
+
+    - name: Configure systemd service
+      template:
+        src: templates/boundary.service.j2
+        dest: /etc/systemd/system/boundary.service
+        mode: '0644'
+      notify: reload systemd
+
+    - name: Ensure Boundary service is configured
+      systemd:
+        name: boundary
+        enabled: yes
+        state: started
+
+    - name: Wait for service to be ready
+      uri:
+        url: "http://localhost:9203/health"
+        method: GET
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Initialize database (first controller only)
+      command: boundary database init -config {{ boundary_home }}/controller.hcl -format json
+      run_once: true
+      args:
+        creates: "{{ boundary_home }}/.db_initialized"
+      register: db_init
+      when: inventory_hostname == groups['boundary_controllers'][0]
+
+    - name: Save initialization details
+      copy:
+        content: "{{ db_init.stdout }}"
+        dest: "{{ boundary_home }}/init-details.json"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+      when: 
+        - inventory_hostname == groups['boundary_controllers'][0]
+        - db_init.changed
+
+    - name: Set fact for terraform vars
+      set_fact:
+        terraform_vars:
+          auth_method_id: "{{ (db_init.stdout | from_json).auth_method_id }}"
+          admin_user_id: "{{ (db_init.stdout | from_json).admin_user_id }}"
+      when: 
+        - inventory_hostname == groups['boundary_controllers'][0]
+        - db_init.changed
+
+    - name: Generate terraform.tfvars
+      template:
+        src: templates/terraform.tfvars.j2
+        dest: "{{ playbook_dir }}/../terraform/terraform.tfvars"
+      when: 
+        - inventory_hostname == groups['boundary_controllers'][0]
+        - db_init.changed
+      delegate_to: localhost
+
+    - name: Create database initialization marker
+      file:
+        path: "{{ boundary_home }}/.db_initialized"
+        state: touch
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+      when: 
+        - inventory_hostname == groups['boundary_controllers'][0]
+        - db_init.changed
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart boundary
+      systemd:
+        name: boundary
+        state: restarted
