@@ -64,7 +64,7 @@ cd boundary-deployment
 
 ### 2. Auto or manual install
 [Auto install](README_auto_config.md)
-[Manual install](README_manual_config.md.md)
+[Manual install](README_manual_config.md)
 
 ## Configuration Files 📝
 
