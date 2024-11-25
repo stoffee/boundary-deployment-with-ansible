@@ -1,3 +1,9 @@
+variable "vault_token" {
+  
+}
+variable "vault_address" {
+  
+}
 variable "transit_mount_path" {
   type        = string
   description = "Path where the transit secrets engine will be mounted"

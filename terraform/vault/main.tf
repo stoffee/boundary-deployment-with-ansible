@@ -1,3 +1,17 @@
+terraform {
+  required_providers {
+    vault = {
+      source = "hashicorp/vault"
+      version = "4.5.0"
+    }
+  }
+}
+
+provider "vault" {
+  token = var.vault_token
+  address = var.vault_address
+}
+
 resource "vault_mount" "transit" {
   path        = var.transit_mount_path
   type        = "transit"

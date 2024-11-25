@@ -1,3 +1,5 @@
+vault_address = "http://myvault:8200"
+vault_token = "hvs.token.xxxxxxx"
 transit_mount_path = "boundary-transit"
 key_prefix        = "prod-boundary"
 token_period      = "720h"  # 30 days
