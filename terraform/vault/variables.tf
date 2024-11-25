@@ -13,7 +13,7 @@ variable "key_prefix" {
 variable "token_period" {
   type        = string
   description = "Token renewal period for Boundary auth tokens"
-  default     = "24h"
+  default     = "86400"
 }
 
 variable "token_policies_controller" {
