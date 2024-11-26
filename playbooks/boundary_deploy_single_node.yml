@@ -1,0 +1,425 @@
+---
+# deploy_boundary_local.yml
+# Purpose: Deploy Boundary with PostgreSQL on a single node 🎯
+# Note: This is for development/testing only! Not for production use.
+
+- name: Deploy Boundary with PostgreSQL
+  hosts: localhost
+  connection: local
+  become: yes
+  vars:
+    # System users 👥
+    boundary_user: boundary
+    boundary_group: boundary
+    postgres_user: postgres
+    postgres_group: postgres
+
+    # Directories 📁
+    boundary_home: /etc/boundary.d
+    boundary_data_dir: /var/lib/boundary
+    boundary_log_dir: /var/log/boundary
+    boundary_run_dir: /var/run/boundary
+    postgres_data: /var/lib/pgsql/14/data
+
+    # PostgreSQL configuration 🐘
+    postgres_version: "14"
+    boundary_db_name: boundary
+    boundary_db_user: boundary
+    boundary_db_password: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
+
+    # Boundary KMS keys 🔑
+    root_key: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
+    worker_auth_key: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
+    recovery_key: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
+
+  pre_tasks:
+    # Install EPEL and other required repositories
+    - name: Install EPEL and PostgreSQL repositories 📦
+      dnf:
+        name: 
+          - "https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm"
+          - "https://download.postgresql.org/pub/repos/yum/reporpms/EL-9-x86_64/pgdg-redhat-repo-latest.noarch.rpm"
+        state: present
+        disable_gpg_check: yes
+      ignore_errors: yes
+
+    # Install all required system packages
+    - name: Install required packages 🔧
+      dnf:
+        name:
+          - policycoreutils-python-utils
+          - python3-policycoreutils
+          - firewalld
+          - libselinux-python3
+          - "postgresql{{ postgres_version }}-server"
+          - "postgresql{{ postgres_version }}"
+          - python3-psycopg2
+          - python3-pip
+        state: present
+
+    # Ensure pip and psycopg2 are available
+    - name: Install psycopg2 via pip if needed 🐍
+      pip:
+        name: psycopg2-binary
+        state: present
+      when: ansible_distribution == 'RedHat' or ansible_distribution == 'CentOS'
+
+  tasks:
+    # PostgreSQL Setup Block 🐘
+    - name: PostgreSQL Setup
+      block:
+        - name: Check if PostgreSQL is already initialized ⚙️
+          stat:
+            path: "{{ postgres_data }}/PG_VERSION"
+          register: pg_initialized
+
+        - name: Stop PostgreSQL service if running 🛑
+          systemd:
+            name: "postgresql-{{ postgres_version }}"
+            state: stopped
+          when: pg_initialized.stat.exists
+
+        - name: Clean up PostgreSQL data directory if needed 🧹
+          file:
+            path: "{{ postgres_data }}"
+            state: absent
+          when: pg_initialized.stat.exists
+
+        - name: Create empty PostgreSQL data directory 📁
+          file:
+            path: "{{ postgres_data }}"
+            state: directory
+            owner: "{{ postgres_user }}"
+            group: "{{ postgres_group }}"
+            mode: '0700'
+
+        - name: Initialize PostgreSQL database 🗃️
+          command: "/usr/pgsql-{{ postgres_version }}/bin/postgresql-{{ postgres_version }}-setup initdb"
+          args:
+            creates: "{{ postgres_data }}/PG_VERSION"
+
+        - name: Start and enable PostgreSQL 🚀
+          systemd:
+            name: "postgresql-{{ postgres_version }}"
+            state: started
+            enabled: yes
+
+        - name: Wait for PostgreSQL to be ready ⏳
+          wait_for:
+            port: 5432
+            timeout: 30
+
+        - name: Create Boundary database 🎲
+          postgresql_db:
+            name: "{{ boundary_db_name }}"
+            state: present
+          become: yes
+          become_user: "{{ postgres_user }}"
+
+        - name: Create Boundary database user 👤
+          postgresql_user:
+            db: "{{ boundary_db_name }}"
+            name: "{{ boundary_db_user }}"
+            password: "{{ boundary_db_password }}"
+            priv: "ALL"
+            state: present
+          become: yes
+          become_user: "{{ postgres_user }}"
+
+        - name: Configure pg_hba.conf for Boundary 📝
+          postgresql_pg_hba:
+            dest: "{{ postgres_data }}/pg_hba.conf"
+            contype: host
+            databases: "{{ boundary_db_name }}"
+            method: password
+            users: "{{ boundary_db_user }}"
+            source: "127.0.0.1/32"
+            state: present
+          notify: restart postgresql
+
+    # Boundary Setup Block 🏰
+    - name: Add HashiCorp repository 🏪
+      yum_repository:
+        name: hashicorp
+        description: HashiCorp Stable - $basearch
+        baseurl: https://rpm.releases.hashicorp.com/RHEL/$releasever/$basearch/stable
+        gpgkey: https://rpm.releases.hashicorp.com/gpg
+        gpgcheck: yes
+        enabled: yes
+
+    - name: Install Boundary package 📥
+      dnf:
+        name: boundary
+        state: present
+
+    - name: Create Boundary system group 👥
+      group:
+        name: "{{ boundary_group }}"
+        system: yes
+        state: present
+
+    - name: Create Boundary system user 👤
+      user:
+        name: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        system: yes
+        create_home: yes
+        home: "{{ boundary_data_dir }}"
+        shell: /sbin/nologin
+        state: present
+
+    - name: Create Boundary directories 📁
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0755'
+      loop:
+        - "{{ boundary_home }}"
+        - "{{ boundary_data_dir }}"
+        - "{{ boundary_log_dir }}"
+        - "{{ boundary_run_dir }}"
+
+    # Set up SELinux contexts 🔒
+    - name: Set SELinux context for Boundary directories
+      sefcontext:
+        target: '{{ item }}(/.*)?'
+        setype: var_lib_t
+        state: present
+      loop:
+        - "{{ boundary_home }}"
+        - "{{ boundary_data_dir }}"
+        - "{{ boundary_log_dir }}"
+        - "{{ boundary_run_dir }}"
+
+    - name: Apply SELinux context 🔐
+      command: restorecon -Rv {{ item }}
+      loop:
+        - "{{ boundary_home }}"
+        - "{{ boundary_data_dir }}"
+        - "{{ boundary_log_dir }}"
+        - "{{ boundary_run_dir }}"
+      changed_when: false
+
+    # Configure firewall ⚙️
+    - name: Configure firewalld service
+      block:
+        - name: Start and enable firewalld
+          systemd:
+            name: firewalld
+            state: started
+            enabled: yes
+
+        - name: Configure firewalld ports 🔥
+          firewalld:
+            port: "{{ item }}"
+            permanent: yes
+            state: enabled
+            immediate: yes
+          loop:
+            - "9200/tcp"  # API listener
+            - "9201/tcp"  # Cluster listener
+            - "9202/tcp"  # Proxy listener
+      when: ansible_service_mgr == 'systemd'
+      ignore_errors: yes
+
+    # Create main configuration
+    - name: Create server configuration ⚙️
+      template:
+        dest: "{{ boundary_home }}/config.hcl"
+        content: |
+          # Server mode configuration with PostgreSQL 🏰
+          disable_mlock = true
+
+          controller {
+            name = "demo-controller"
+            description = "A simple controller 🎮"
+            
+            database {
+              url = "postgresql://{{ boundary_db_user }}:{{ boundary_db_password }}@localhost:5432/{{ boundary_db_name }}?sslmode=disable"
+            }
+          }
+
+          worker {
+            name = "demo-worker"
+            description = "A simple worker 🔧"
+            public_addr = "{{ ansible_default_ipv4.address }}"
+          }
+
+          listener "tcp" {
+            address = "0.0.0.0:9200"
+            purpose = "api"
+            tls_disable = true  # For development only!
+          }
+
+          listener "tcp" {
+            address = "0.0.0.0:9201"
+            purpose = "cluster"
+            tls_disable = true  # For development only!
+          }
+
+          listener "tcp" {
+            address = "0.0.0.0:9202"
+            purpose = "proxy"
+            tls_disable = true  # For development only!
+          }
+
+          kms "aead" {
+            purpose = "root"
+            aead_type = "aes-gcm"
+            key = "{{ root_key }}"
+          }
+
+          kms "aead" {
+            purpose = "worker-auth"
+            aead_type = "aes-gcm"
+            key = "{{ worker_auth_key }}"
+          }
+
+          kms "aead" {
+            purpose = "recovery"
+            aead_type = "aes-gcm"
+            key = "{{ recovery_key }}"
+          }
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0640'
+
+    # Configure systemd service
+    - name: Configure systemd service 🚀
+      template:
+        dest: /etc/systemd/system/boundary.service
+        content: |
+          [Unit]
+          Description=HashiCorp Boundary Server
+          Documentation=https://www.boundaryproject.io/
+          Requires=network-online.target postgresql-{{ postgres_version }}.service
+          After=network-online.target postgresql-{{ postgres_version }}.service
+          ConditionFileNotEmpty={{ boundary_home }}/config.hcl
+
+          [Service]
+          Type=simple
+          User={{ boundary_user }}
+          Group={{ boundary_group }}
+          ExecStart=/usr/bin/boundary server -config={{ boundary_home }}/config.hcl
+          ExecReload=/bin/kill --signal HUP $MAINPID
+          KillMode=process
+          KillSignal=SIGINT
+          Restart=on-failure
+          RestartSec=5
+          TimeoutStopSec=30
+          LimitMEMLOCK=infinity
+          LimitNOFILE=65536
+          
+          # Capabilities
+          AmbientCapabilities=CAP_IPC_LOCK
+          
+          # Security
+          ProtectSystem=strict
+          ProtectHome=read-only
+          ReadWritePaths={{ boundary_home }} {{ boundary_data_dir }} {{ boundary_log_dir }} {{ boundary_run_dir }}
+          NoNewPrivileges=yes
+          PrivateTmp=yes
+          PrivateDevices=yes
+          RestrictSUIDSGID=yes
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify:
+        - reload systemd
+
+    # Initialize Boundary database
+    - name: Initialize Boundary database 🗄️
+      block:
+        - name: Initialize database with Boundary schema
+          command: boundary database init -config {{ boundary_home }}/config.hcl -skip-auth-method-creation -skip-host-resources-creation -skip-target-creation
+          become: yes
+          become_user: "{{ boundary_user }}"
+          environment:
+            HOME: "{{ boundary_data_dir }}"
+            PATH: "/usr/local/bin:/usr/bin:/bin"
+          register: init_output
+          changed_when: true
+      rescue:
+        - name: Display detailed error if initialization fails 🚨
+          debug:
+            msg: "Failed to initialize database. Error: {{ init_output.stderr if init_output.stderr is defined else 'Unknown error' }}"
+          failed_when: true
+
+    # Save initialization output
+    - name: Save initialization output 📝
+      copy:
+        content: |
+          Boundary Initialization Details 🎮
+          ================================
+          Database User: {{ boundary_db_user }}
+          Database Password: {{ boundary_db_password }}
+          
+          KMS Keys 🔑
+          =========
+          Root Key: {{ root_key }}
+          Worker Auth Key: {{ worker_auth_key }}
+          Recovery Key: {{ recovery_key }}
+          
+          Initialization Output:
+          {{ init_output.stdout }}
+        dest: "{{ boundary_home }}/init-output.txt"
+        owner: "{{ boundary_user }}"
+        group: "{{ boundary_group }}"
+        mode: '0600'
+      when: init_output.stdout is defined
+
+    # Start and enable the service
+    - name: Start and enable Boundary service ▶️
+      systemd:
+        name: boundary
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
+    # Wait for service to be ready
+    - name: Wait for service to be ready ⏳
+      wait_for:
+        port: 9200
+        timeout: 30
+
+    # Display completion message with ASCII art celebration!
+    - name: Display initialization info 📝
+      debug:
+        msg: |
+          🎉 Boundary initialized successfully! 🎉
+          
+          PostgreSQL Details:
+          Database: {{ boundary_db_name }}
+          Username: {{ boundary_db_user }}
+          Password: {{ boundary_db_password }}
+          
+          Access the UI at: http://{{ ansible_default_ipv4.address }}:9200
+          
+          Initial setup info has been saved to: {{ boundary_home }}/init-output.txt
+          
+          Remember to save your KMS keys:
+          Root key: {{ root_key }}
+          Worker Auth key: {{ worker_auth_key }}
+          Recovery key: {{ recovery_key }}
+
+          ┏━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+          ┃   Boundary is Ready! 🚀   ┃
+          ┗━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+  handlers:
+    - name: reload systemd
+      systemd:
+        daemon_reload: yes
+
+    - name: restart postgresql
+      systemd:
+        name: "postgresql-{{ postgres_version }}"
+        state: restarted
+
+    - name: restart boundary
+      systemd:
+        name: boundary
+        state: restarted
