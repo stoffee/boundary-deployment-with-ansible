@@ -227,7 +227,7 @@
     # Create main configuration
     - name: Create server configuration ⚙️
       template:
-        src: "templates/boundary-single-node.hcl.j2"
+        src: "..templates/boundary-single-node.hcl.j2"
         dest: "{{ boundary_home }}/config.hcl"
         owner: "{{ boundary_user }}"
         group: "{{ boundary_group }}"
