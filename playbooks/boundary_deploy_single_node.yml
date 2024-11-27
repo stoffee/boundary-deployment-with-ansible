@@ -25,7 +25,8 @@
     postgres_version: "14"
     boundary_db_name: boundary
     boundary_db_user: boundary
-    boundary_db_password: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
+    #boundary_db_password: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
+    boundary_db_password: "boundary9ass123"
 
     # Boundary KMS keys 🔑
     root_key: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
