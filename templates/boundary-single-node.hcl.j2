@@ -1,0 +1,73 @@
+# Boundary Single Node Configuration 🏰
+# This template combines controller and worker for development/testing
+
+# Disable memory locking - adjust for production
+disable_mlock = {{ disable_mlock | default('true') }}
+
+# Controller configuration
+controller {
+  name = "{{ controller_name | default('single-node-controller') }}"
+  description = "Single node controller for development/testing 🎮"
+  
+  database {
+    url = "postgresql://{{ boundary_db_user }}:{{ boundary_db_password }}@localhost:5432/{{ boundary_db_name }}?sslmode=disable"
+  }
+}
+
+# Worker configuration
+worker {
+  name = "{{ worker_name | default('single-node-worker') }}"
+  description = "Single node worker for development/testing 🔧"
+  public_addr = "{{ ansible_default_ipv4.address }}"
+  
+  # For single node, we want the worker to connect directly to the local controller
+  initial_upstreams = ["127.0.0.1:9201"]
+}
+
+# API listener for UI/CLI
+listener "tcp" {
+  address = "0.0.0.0:9200"
+  purpose = "api"
+  
+{% if tls_enabled | default(false) %}
+  tls_disable   = false
+  tls_cert_file = "{{ tls_cert_path }}"
+  tls_key_file  = "{{ tls_key_path }}"
+{% else %}
+  tls_disable = true  # For development only!
+{% endif %}
+}
+
+# Cluster listener for worker coordination
+listener "tcp" {
+  address = "0.0.0.0:9201"
+  purpose = "cluster"
+  tls_disable = true  # Internal traffic
+}
+
+# Proxy listener for session connections
+listener "tcp" {
+  address = "0.0.0.0:9202"
+  purpose = "proxy"
+  tls_disable = true  # For development only
+}
+
+# KMS configuration using AEAD for development
+# For production, consider using cloud KMS or HashiCorp Vault
+kms "aead" {
+  purpose = "root"
+  aead_type = "aes-gcm"
+  key = "{{ root_key }}"
+}
+
+kms "aead" {
+  purpose = "worker-auth"
+  aead_type = "aes-gcm"
+  key = "{{ worker_auth_key }}"
+}
+
+kms "aead" {
+  purpose = "recovery"
+  aead_type = "aes-gcm"
+  key = "{{ recovery_key }}"
+}

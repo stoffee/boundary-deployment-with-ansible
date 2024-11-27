@@ -227,61 +227,8 @@
     # Create main configuration
     - name: Create server configuration ⚙️
       template:
+        src: "templates/boundary-single-node.hcl.j2"
         dest: "{{ boundary_home }}/config.hcl"
-        content: |
-          # Server mode configuration with PostgreSQL 🏰
-          disable_mlock = true
-
-          controller {
-            name = "demo-controller"
-            description = "A simple controller 🎮"
-            
-            database {
-              url = "postgresql://{{ boundary_db_user }}:{{ boundary_db_password }}@localhost:5432/{{ boundary_db_name }}?sslmode=disable"
-            }
-          }
-
-          worker {
-            name = "demo-worker"
-            description = "A simple worker 🔧"
-            public_addr = "{{ ansible_default_ipv4.address }}"
-          }
-
-          listener "tcp" {
-            address = "0.0.0.0:9200"
-            purpose = "api"
-            tls_disable = true  # For development only!
-          }
-
-          listener "tcp" {
-            address = "0.0.0.0:9201"
-            purpose = "cluster"
-            tls_disable = true  # For development only!
-          }
-
-          listener "tcp" {
-            address = "0.0.0.0:9202"
-            purpose = "proxy"
-            tls_disable = true  # For development only!
-          }
-
-          kms "aead" {
-            purpose = "root"
-            aead_type = "aes-gcm"
-            key = "{{ root_key }}"
-          }
-
-          kms "aead" {
-            purpose = "worker-auth"
-            aead_type = "aes-gcm"
-            key = "{{ worker_auth_key }}"
-          }
-
-          kms "aead" {
-            purpose = "recovery"
-            aead_type = "aes-gcm"
-            key = "{{ recovery_key }}"
-          }
         owner: "{{ boundary_user }}"
         group: "{{ boundary_group }}"
         mode: '0640'
