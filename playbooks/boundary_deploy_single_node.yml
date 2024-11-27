@@ -56,6 +56,7 @@
           - libselinux-python3
           - "postgresql{{ postgres_version }}-server"
           - "postgresql{{ postgres_version }}"
+          - "postgresql{{ postgres_version }}-contrib"
           - python3-psycopg2
           - python3-pip
         state: present
