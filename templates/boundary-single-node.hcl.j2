@@ -19,9 +19,6 @@ worker {
   name = "{{ worker_name | default('single-node-worker') }}"
   description = "Single node worker for development/testing 🔧"
   public_addr = "{{ ansible_default_ipv4.address }}"
-  
-  # For single node, we want the worker to connect directly to the local controller
-  initial_upstreams = ["127.0.0.1:9201"]
 }
 
 # API listener for UI/CLI
