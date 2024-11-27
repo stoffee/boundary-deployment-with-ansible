@@ -238,7 +238,7 @@
 
     # Configure systemd service
     - name: Configure systemd service 🚀
-      template:
+      copy:
         dest: /etc/systemd/system/boundary.service
         content: |
           [Unit]
