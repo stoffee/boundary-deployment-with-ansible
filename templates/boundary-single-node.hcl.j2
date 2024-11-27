@@ -19,11 +19,12 @@ worker {
   name = "{{ worker_name | default('single-node-worker') }}"
   description = "Single node worker for development/testing 🔧"
   public_addr = "{{ ansible_default_ipv4.address }}"
+  controllers = ["127.0.0.1:9201"]
 }
 
 # API listener for UI/CLI
 listener "tcp" {
-  address = "0.0.0.0:9200"
+  address = "127.0.0.1:9200"
   purpose = "api"
   
 {% if tls_enabled | default(false) %}
@@ -37,14 +38,14 @@ listener "tcp" {
 
 # Cluster listener for worker coordination
 listener "tcp" {
-  address = "0.0.0.0:9201"
+  address = "127.0.0.1:9201"
   purpose = "cluster"
   tls_disable = true  # Internal traffic
 }
 
 # Proxy listener for session connections
 listener "tcp" {
-  address = "0.0.0.0:9202"
+  address = "127.0.0.1:9202"
   purpose = "proxy"
   tls_disable = true  # For development only
 }
