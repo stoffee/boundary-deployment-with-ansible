@@ -69,3 +69,21 @@ kms "aead" {
   aead_type = "aes-gcm"
   key = "{{ recovery_key }}"
 }
+
+events {
+  audit_enabled       = true
+  sysevents_enabled   = true
+  observations_enable = true
+  
+  sink {
+    name = "file-sink"
+    description = "All events sent to file"
+    event_types = ["*"]
+    format = "cloudevents-json"
+    file {
+      path = "{{ boundary_log_dir }}"
+      file_name = "boundary.log"
+      mode = "0640"
+    }
+  }
+}
