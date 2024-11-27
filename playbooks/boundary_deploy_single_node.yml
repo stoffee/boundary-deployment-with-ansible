@@ -32,6 +32,9 @@
     worker_auth_key: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
     recovery_key: "{{ lookup('pipe', 'openssl rand -base64 32') }}"
 
+    # path fix
+    ansible_templates_path: "{{ playbook_dir }}/../templates"
+
   pre_tasks:
     # Install EPEL and other required repositories
     - name: Install EPEL and PostgreSQL repositories 📦
@@ -227,7 +230,7 @@
     # Create main configuration
     - name: Create server configuration ⚙️
       template:
-        src: "../templates/boundary-single-node.hcl.j2"
+        src: "{{ ansible_templates_path }}/boundary-single-node.hcl.j2"
         dest: "{{ boundary_home }}/config.hcl"
         owner: "{{ boundary_user }}"
         group: "{{ boundary_group }}"
